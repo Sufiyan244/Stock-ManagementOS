@@ -1,0 +1,2 @@
+import { RegisterForm } from '@/components/register-form';
+export default function RegisterPage() { return <main className="min-h-screen flex items-center justify-center p-5"><div className="w-full max-w-md"><div className="mb-8 text-center"><h1 className="text-2xl font-bold">Join your business</h1><p className="muted mt-2 text-sm">Create an account with the invitation from your administrator.</p></div><RegisterForm /><p className="muted mt-5 text-center text-xs">Already registered? <a className="font-semibold text-[var(--blue)]" href="/login">Sign in</a></p></div></main>; }
