@@ -788,3 +788,75 @@ end;
 $$;
 revoke all on function public.delete_order(uuid) from public;
 grant execute on function public.delete_order(uuid) to authenticated;
+
+
+-- Pending-order detail editing is allowed to admins and managers only.
+create or replace function public.update_order_details(p_order_id uuid,p_customer_name text,p_notes text default null)
+returns boolean language plpgsql security definer set search_path = public
+as $$
+declare o public.orders%rowtype; customer_label text := trim(coalesce(p_customer_name,''));
+begin
+  if public.current_app_role() not in ('admin','manager') or not public.business_is_active() then
+    raise exception 'Only an active admin or manager can edit order details.';
+  end if;
+  if customer_label='' then raise exception 'Customer name is required.'; end if;
+  select * into o from public.orders where id=p_order_id and business_id=public.current_business_id() for update;
+  if not found or o.status<>'pending' then raise exception 'Only pending orders can be edited.'; end if;
+  update public.orders set customer_name=customer_label,notes=nullif(trim(p_notes),'') where id=o.id;
+  perform public.log_activity('Updated order details','order',o.id,jsonb_build_object('customer_name',customer_label));
+  return true;
+end;
+$$;
+revoke all on function public.update_order_details(uuid,text,text) from public;
+grant execute on function public.update_order_details(uuid,text,text) to authenticated;
+
+-- Keep product categories inside the same tenant.
+create or replace function public.check_product_category_business()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  if new.category_id is not null and not exists (
+    select 1 from public.categories c where c.id=new.category_id and c.business_id=new.business_id
+  ) then
+    raise exception 'Product category must belong to the same business.';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists product_category_business_check on public.products;
+create trigger product_category_business_check before insert or update of category_id,business_id
+on public.products for each row execute function public.check_product_category_business();
+
+create or replace function public.record_category_activity()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  if tg_op='INSERT' then
+    insert into public.activity_logs(business_id,actor_id,action,entity,entity_id,details)
+    values(new.business_id,auth.uid(),'Created category','category',new.id,jsonb_build_object('name',new.name));
+    return new;
+  end if;
+  if tg_op='UPDATE' then
+    insert into public.activity_logs(business_id,actor_id,action,entity,entity_id,details)
+    values(new.business_id,auth.uid(),'Updated category','category',new.id,jsonb_build_object('name',new.name));
+    return new;
+  end if;
+  return old;
+end;
+$$;
+drop trigger if exists categories_activity on public.categories;
+create trigger categories_activity after insert or update on public.categories
+for each row execute function public.record_category_activity();
+
+create or replace function public.record_expense_activity()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  insert into public.activity_logs(business_id,actor_id,action,entity,entity_id,details)
+  values(new.business_id,auth.uid(),'Recorded expense','expense',new.id,jsonb_build_object('title',new.title,'amount',new.amount));
+  return new;
+end;
+$$;
+drop trigger if exists expenses_activity on public.expenses;
+create trigger expenses_activity after insert on public.expenses
+for each row execute function public.record_expense_activity();
