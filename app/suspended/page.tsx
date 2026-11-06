@@ -1,0 +1,2 @@
+import {signOutAction} from '@/app/actions';
+export default function SuspendedPage(){return <main className="flex min-h-screen items-center justify-center p-5"><div className="surface max-w-md p-8 text-center"><h1 className="text-xl font-bold">Business access is suspended</h1><p className="muted mt-3 text-sm">The business workspace is currently unavailable. Contact your service provider to restore access.</p><form action={signOutAction} className="mt-6"><button className="btn btn-secondary">Sign out</button></form></div></main>;}

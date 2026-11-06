@@ -1,0 +1,15 @@
+'use client';
+import {useMemo,useState} from 'react';import {useRouter} from 'next/navigation';import {createClient} from '@/lib/supabase/client';
+export function OrderComposer({products}:{products:any[]}){
+ const router=useRouter();const [customer,setCustomer]=useState('');const [notes,setNotes]=useState('');const [cart,setCart]=useState<Record<string,number>>({});const [error,setError]=useState('');const [busy,setBusy]=useState(false);
+ const total=useMemo(()=>products.reduce((s,p)=>s+(cart[p.id]||0)*Number(p.selling_price),0),[products,cart]);
+ async function submit(e:React.FormEvent){e.preventDefault();const items=Object.entries(cart).filter(([,q])=>q>0).map(([product_id,quantity])=>({product_id,quantity}));if(!items.length){setError('Add at least one product.');return;}if(!customer.trim()){setError('Enter a customer name.');return;}setBusy(true);setError('');
+  const {error}=await createClient().rpc('create_order',{p_customer_name:customer.trim(),p_items:items,p_notes:notes.trim()||null});if(error)setError(error.message);else{setCart({});setCustomer('');setNotes('');router.refresh();}setBusy(false);
+ }
+ return <form onSubmit={submit} className="surface p-5"><div className="mb-4 flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-semibold">Create order</h2><p className="muted mt-1 text-xs">Choose multiple products. Stock is reserved only when confirmed.</p></div><span className="pill">{products.length} active products</span></div>
+  <div className="grid gap-3 sm:grid-cols-2"><input className="field" value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="Customer name" required/><input className="field" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Order notes (optional)"/></div>
+  <div className="mt-4 max-h-64 space-y-2 overflow-y-auto">{products.map(p=>{const available=Number(p.stock_quantity)-Number(p.reserved_quantity);return <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--line)] p-3"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{p.name}</p><p className="muted text-xs">{p.sku||'No SKU'} · {available} available · {money(p.selling_price)}</p></div><input aria-label={'Quantity for '+p.name} className="field !w-24" type="number" min="0" max={available} value={cart[p.id]||0} onChange={e=>setCart(old=>({...old,[p.id]:Math.min(available,Math.max(0,Number(e.target.value)))}))}/></div>;})}{!products.length&&<p className="muted py-5 text-sm">Add products to inventory before creating an order.</p>}</div>
+  <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4"><div><p className="muted text-xs">Order total</p><p className="text-xl font-bold">{money(total)}</p></div><button className="btn" disabled={busy||total<=0}>{busy?'Creating...':'Create pending order'}</button></div>{error&&<p role="alert" className="mt-3 text-sm text-red-600">{error}</p>}
+ </form>;
+}
+function money(v:number){return new Intl.NumberFormat('en-PK',{style:'currency',currency:'PKR',maximumFractionDigits:0}).format(v||0)}
