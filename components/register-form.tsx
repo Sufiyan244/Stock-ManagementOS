@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/client';
 export function RegisterForm() {
   const [name,setName]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [key,setKey]=useState(''); const [busy,setBusy]=useState(false); const [message,setMessage]=useState('');
   async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setMessage('');const supabase=createClient();
-    const {data,error}=await supabase.auth.signUp({email,password,options:{data:{display_name:name}}});
+    const {data,error}=await supabase.auth.signUp({email,password,options:{data:{display_name:name},emailRedirectTo:window.location.origin+'/login?invite='+encodeURIComponent(key.trim())}});
     if(error){setMessage(error.message);setBusy(false);return;}
     if(data.session){const {error:inviteError}=await supabase.rpc('accept_invitation',{p_key:key.trim()});if(inviteError){setMessage('Account created, but invitation failed: '+inviteError.message);setBusy(false);return;}window.location.assign('/dashboard');return;}
     setMessage('Account created. Verify your email, then sign in using the same invitation key: '+key);setBusy(false);
