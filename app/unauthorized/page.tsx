@@ -1,0 +1,1 @@
+export default function UnauthorizedPage(){return <main className="flex min-h-screen items-center justify-center p-5"><div className="surface p-8 text-center"><h1 className="text-xl font-bold">Access denied</h1><p className="muted mt-2 text-sm">Your account does not have permission to open this page.</p><a className="btn mt-5" href="/dashboard">Go to dashboard</a></div></main>}

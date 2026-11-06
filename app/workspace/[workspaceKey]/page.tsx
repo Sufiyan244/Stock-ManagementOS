@@ -1,0 +1,20 @@
+import {requireWorkspace} from '@/lib/access';import {WorkspaceShell} from '@/components/workspace-shell';
+export default async function WorkspacePage({params}:{params:Promise<{workspaceKey:string}>}){
+ const {workspaceKey}=await params;const {supabase,profile}=await requireWorkspace(workspaceKey);
+ const [products,orders,expenses,activity,business]=await Promise.all([
+  supabase.from('products').select('id,stock_quantity,reserved_quantity,low_stock_level').eq('active',true),
+  supabase.from('orders').select('id,total_amount,status,payment_status,created_at,order_number').order('created_at',{ascending:false}).limit(8),
+  supabase.from('expenses').select('amount').gte('expense_date',new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10)),
+  supabase.from('activity_logs').select('id,action,entity,created_at').order('created_at',{ascending:false}).limit(6),
+  supabase.from('businesses').select('name').eq('id',profile.business_id).maybeSingle(),
+ ]);
+ const ps=products.data||[];const os=orders.data||[];const sales=os.filter((o:any)=>o.status==='delivered').reduce((s:number,o:any)=>s+Number(o.total_amount),0);const low=ps.filter((p:any)=>Number(p.stock_quantity)-Number(p.reserved_quantity)<=Number(p.low_stock_level)).length;const exp=(expenses.data||[]).reduce((s:number,e:any)=>s+Number(e.amount),0);
+ return <WorkspaceShell workspaceKey={workspaceKey} role={profile.role} name={profile.display_name} businessName={business?.name||'Business workspace'}>
+  <div className="mb-7"><p className="muted text-sm">Overview</p><h1 className="mt-1 text-2xl font-bold">Business dashboard</h1><p className="muted mt-1 text-sm">Your inventory and order activity at a glance.</p></div>
+  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Stat label="Active products" value={ps.length} note="Products in inventory"/><Stat label="Low stock" value={low} note="At or below reorder level"/><Stat label="Delivered sales" value={money(sales)} note="Latest 8 orders shown"/><Stat label="Monthly expenses" value={money(exp)} note="Current calendar month"/></div>
+  <div className="mt-6 grid gap-5 xl:grid-cols-[1.4fr_1fr]"><section className="surface p-5"><div className="mb-4 flex items-center justify-between"><h2 className="font-semibold">Recent orders</h2><a className="text-sm font-semibold text-[var(--blue)]" href={'/workspace/'+workspaceKey+'/orders'}>View all</a></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>Status</th><th>Amount</th></tr></thead><tbody>{os.length?os.map((o:any)=><tr key={o.id}><td className="font-semibold">{o.order_number||o.id.slice(0,8).toUpperCase()}</td><td><span className="pill pill-blue capitalize">{o.status.replaceAll('_',' ')}</span></td><td>{money(o.total_amount)}</td></tr>):<tr><td colSpan={3} className="muted py-8 text-center">No orders yet.</td></tr>}</tbody></table></div></section>
+   <section className="surface p-5"><h2 className="mb-4 font-semibold">Recent activity</h2><div className="space-y-4">{(activity.data||[]).length?activity.data?.map((a:any)=><div key={a.id} className="flex gap-3"><span className="mt-1 h-2 w-2 rounded-full bg-[var(--blue)]"/><div><p className="text-sm font-medium">{a.action}</p><p className="muted text-xs">{new Date(a.created_at).toLocaleString()}</p></div></div>):<p className="muted text-sm">Activity will appear here.</p>}</div></section></div>
+ </WorkspaceShell>;
+}
+function Stat({label,value,note}:{label:string;value:string|number;note:string}){return <div className="surface p-5"><p className="muted text-sm">{label}</p><p className="stat-value mt-2">{value}</p><p className="muted mt-1 text-xs">{note}</p></div>}
+function money(v:number){return new Intl.NumberFormat('en-PK',{style:'currency',currency:'PKR',maximumFractionDigits:0}).format(v||0)}
