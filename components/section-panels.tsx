@@ -45,10 +45,38 @@ function OrderActions({order,role,bookers}:any){
   {error&&<span className="w-full text-[10px] text-red-600">{error}</span>}
  </div>;
 }
-function Reports({orders,expenses,products}:any){
- const revenue=orders.reduce((s:number,o:any)=>s+Number(o.total_amount),0);const collected=orders.reduce((s:number,o:any)=>s+Number(o.amount_received),0);const costs=orders.reduce((s:number,o:any)=>s+Number(o.cost_total||0),0);const expenseTotal=expenses.reduce((s:number,e:any)=>s+Number(e.amount),0);const profit=revenue-costs-expenseTotal;
- const stats=[['Delivered sales',money(revenue)],['Collections received',money(collected)],['Cost of goods',money(costs)],['Expenses',money(expenseTotal)],['Estimated profit',money(profit)],['Active products',products.length]];
- return <div className="space-y-5"><div className="flex flex-wrap justify-end gap-2"><ExportTools filename="stockos-report"/></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{stats.map(([label,value])=><div className="surface p-5" key={label}><p className="muted text-sm">{label}</p><p className="stat-value mt-2 text-xl">{value}</p></div>)}</div><div className="surface p-5"><h2 className="mb-3 font-semibold">Delivered orders</h2><div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>Date</th><th>Payment</th><th>Total</th><th>Collected</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td>{o.order_number}</td><td>{new Date(o.created_at).toLocaleDateString()}</td><td>{o.payment_status}</td><td>{money(o.total_amount)}</td><td>{money(o.amount_received)}</td></tr>)}{!orders.length&&<Empty colSpan={5}/>}</tbody></table></div></div><p className="muted text-xs">Profit estimate = delivered sales less item cost snapshots and expenses. Export includes the report table loaded on this page. Excel export is CSV-compatible; PDF is generated through the browser print dialog.</p></div>;
+function Reports({orders,expenses,products,role}:any){
+ const today=new Date();
+ const sameDay=(value:string)=>new Date(value).toDateString()===today.toDateString();
+ const thisMonth=orders.filter((o:any)=>{const d=new Date(o.created_at);return d.getFullYear()===today.getFullYear()&&d.getMonth()===today.getMonth();});
+ const daily=thisMonth.filter((o:any)=>sameDay(o.created_at));
+ const revenue=orders.reduce((sum:number,o:any)=>sum+Number(o.total_amount),0);
+ const collected=orders.reduce((sum:number,o:any)=>sum+Number(o.amount_received),0);
+ const costs=orders.reduce((sum:number,o:any)=>sum+Number(o.cost_total||0),0);
+ const expenseTotal=expenses.reduce((sum:number,e:any)=>sum+Number(e.amount),0);
+ const monthlyExpenses=expenses.filter((e:any)=>{const d=new Date(e.expense_date+'T00:00:00');return d.getFullYear()===today.getFullYear()&&d.getMonth()===today.getMonth();}).reduce((sum:number,e:any)=>sum+Number(e.amount),0);
+ const profit=revenue-costs-expenseTotal;
+ const stockUnits=products.reduce((sum:number,p:any)=>sum+Number(p.stock_quantity)-Number(p.reserved_quantity),0);
+ const stockValue=products.reduce((sum:number,p:any)=>sum+(Number(p.stock_quantity)-Number(p.reserved_quantity))*Number(p.cost_price||0),0);
+ const canSeeCosts=role==='admin'||role==='manager';
+ const monthly:Record<string,{sales:number;collections:number;expenses:number}>={};
+ orders.forEach((o:any)=>{const key=new Date(o.created_at).toISOString().slice(0,7);monthly[key]??={sales:0,collections:0,expenses:0};monthly[key].sales+=Number(o.total_amount);monthly[key].collections+=Number(o.amount_received);});
+ expenses.forEach((e:any)=>{const key=String(e.expense_date).slice(0,7);monthly[key]??={sales:0,collections:0,expenses:0};monthly[key].expenses+=Number(e.amount);});
+ const stats=[
+  ['Delivered sales',money(revenue)],['Today sales',money(daily.reduce((sum:number,o:any)=>sum+Number(o.total_amount),0))],
+  ['Today collections',money(daily.reduce((sum:number,o:any)=>sum+Number(o.amount_received),0))],
+  ['This month sales',money(thisMonth.reduce((sum:number,o:any)=>sum+Number(o.total_amount),0))],
+  ['Available stock units',stockUnits],['Stock value at cost',money(stockValue)],
+  ...(canSeeCosts?[['Cost of goods',money(costs)],['All expenses',money(expenseTotal)],['Estimated profit',money(profit)],['This month expenses',money(monthlyExpenses)]]:[]),
+ ];
+ return <div className="space-y-5">
+  <div className="no-print flex flex-wrap justify-end gap-2"><ExportTools filename="stockos-report"/></div>
+  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{stats.map(([label,value])=><div className="surface p-5" key={label}><p className="muted text-sm">{label}</p><p className="stat-value mt-2 text-xl">{value}</p></div>)}</div>
+  <div className="surface p-5"><h2 className="mb-3 font-semibold">Monthly summary</h2><div className="table-wrap"><table className="data-table"><thead><tr><th>Month</th><th>Delivered sales</th><th>Collections</th>{canSeeCosts&&<th>Expenses</th>}</tr></thead><tbody>{Object.entries(monthly).sort(([a],[b])=>b.localeCompare(a)).map(([month,row])=><tr key={month}><td>{month}</td><td>{money(row.sales)}</td><td>{money(row.collections)}</td>{canSeeCosts&&<td>{money(row.expenses)}</td>}</tr>)}{!Object.keys(monthly).length&&<Empty colSpan={canSeeCosts?4:3}/>}</tbody></table></div></div>
+  <div className="surface p-5"><h2 className="mb-3 font-semibold">Delivered orders</h2><div className="table-wrap"><table className="data-table"><thead><tr><th>Order</th><th>Date</th><th>Payment</th><th>Total</th><th>Collected</th></tr></thead><tbody>{orders.map((o:any)=><tr key={o.id}><td>{o.order_number}</td><td>{new Date(o.created_at).toLocaleDateString()}</td><td>{o.payment_status}</td><td>{money(o.total_amount)}</td><td>{money(o.amount_received)}</td></tr>)}{!orders.length&&<Empty colSpan={5}/>}</tbody></table></div></div>
+  {canSeeCosts&&<div className="surface p-5"><h2 className="mb-3 font-semibold">Expenses</h2><div className="table-wrap"><table className="data-table"><thead><tr><th>Date</th><th>Description</th><th>Amount</th></tr></thead><tbody>{expenses.map((e:any)=><tr key={e.id}><td>{e.expense_date}</td><td>{e.title}</td><td>{money(e.amount)}</td></tr>)}{!expenses.length&&<Empty colSpan={3}/>}</tbody></table></div></div>}
+  <p className="muted text-xs">Profit estimate = delivered sales less item cost snapshots and recorded expenses. Figures are based on the latest 1,000 delivered orders and 1,000 expense records. Excel export is CSV-compatible; PDF is generated through the browser print dialog.</p>
+ </div>;
 }
 function Expenses({expenses}:any){return <div className="space-y-5"><div className="surface p-5"><h2 className="mb-4 font-semibold">Record expense</h2><form action={addExpenseAction} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><input className="field" name="title" placeholder="Expense title" required/><input className="field" type="number" min=".01" step=".01" name="amount" placeholder="Amount" required/><input className="field" type="date" name="expense_date" defaultValue={new Date().toISOString().slice(0,10)}/><input className="field" name="notes" placeholder="Notes (optional)"/><button className="btn sm:col-span-2 lg:col-span-4">Save expense</button></form></div><div className="surface p-4"><h2 className="mb-3 font-semibold">Expense history</h2><div className="table-wrap"><table className="data-table"><thead><tr><th>Date</th><th>Title</th><th>Amount</th><th>Notes</th></tr></thead><tbody>{expenses.map((e:any)=><tr key={e.id}><td>{e.expense_date}</td><td>{e.title}</td><td>{money(e.amount)}</td><td>{e.notes||'—'}</td></tr>)}{!expenses.length&&<Empty colSpan={4}/>}</tbody></table></div></div></div>;}
 function Team({members,role}:any){
