@@ -700,3 +700,91 @@ grant execute on function public.process_owner_messages() to service_role;
 
 -- The platform owner creates a separate Auth identity, then adds its UUID to
 -- owner_accounts. Never add owner rows to profiles or give owner a staff role.
+
+
+-- Fine-grained staff visibility and admin-only order deletion.
+drop policy if exists profile_read_scoped on public.profiles;
+create policy profile_read_scoped on public.profiles for select to authenticated
+using (
+  user_id=auth.uid()
+  or (business_id=public.current_business_id() and public.current_app_role() in ('admin','manager') and public.business_is_active())
+);
+
+drop policy if exists categories_read on public.categories;
+create policy categories_read on public.categories for select to authenticated
+using(business_id=public.current_business_id() and public.business_is_active());
+
+drop policy if exists customers_read on public.customers;
+create policy customers_read on public.customers for select to authenticated
+using (
+  business_id=public.current_business_id() and public.business_is_active()
+  and (
+    public.current_app_role() in ('admin','manager','cashier')
+    or (public.current_app_role()='order_booker' and exists (
+      select 1 from public.orders o where o.business_id=customers.business_id
+      and o.customer_id=customers.id
+      and (o.created_by=auth.uid() or o.assigned_order_booker_id=auth.uid())
+    ))
+  )
+);
+
+drop policy if exists orders_read on public.orders;
+create policy orders_read on public.orders for select to authenticated
+using (
+  business_id=public.current_business_id() and public.business_is_active()
+  and (
+    public.current_app_role() in ('admin','manager')
+    or (public.current_app_role()='cashier' and status<>'pending')
+    or (public.current_app_role()='order_booker' and (created_by=auth.uid() or assigned_order_booker_id=auth.uid()))
+  )
+);
+
+drop policy if exists order_items_read on public.order_items;
+create policy order_items_read on public.order_items for select to authenticated
+using (
+  business_id=public.current_business_id() and public.business_is_active()
+  and exists (
+    select 1 from public.orders o where o.id=order_items.order_id and o.business_id=order_items.business_id
+    and (
+      public.current_app_role() in ('admin','manager','cashier')
+      or (public.current_app_role()='order_booker' and (o.created_by=auth.uid() or o.assigned_order_booker_id=auth.uid()))
+    )
+  )
+);
+
+drop policy if exists notifications_read_own on public.notifications;
+create policy notifications_read_own on public.notifications for select to authenticated
+using(business_id=public.current_business_id() and recipient_id=auth.uid() and public.business_is_active());
+drop policy if exists notifications_update_own on public.notifications;
+
+revoke update on public.notifications from authenticated;
+
+create or replace function public.delete_order(p_order_id uuid)
+returns boolean language plpgsql security definer set search_path = public
+as $$
+declare o public.orders%rowtype; line record;
+begin
+  if public.current_app_role() <> 'admin' or not public.business_is_active() then
+    raise exception 'Only an active business admin can delete orders.';
+  end if;
+  select * into o from public.orders
+  where id=p_order_id and business_id=public.current_business_id()
+  for update;
+  if not found then raise exception 'Order not found.'; end if;
+  if o.status='delivered' then
+    raise exception 'Delivered orders are retained for accounting. Cancel or retain them instead of deleting.';
+  end if;
+  if o.status in ('confirmed','allocated','on_the_way') then
+    for line in select * from public.order_items where order_id=o.id and business_id=o.business_id order by product_id loop
+      update public.products set reserved_quantity=reserved_quantity-line.quantity
+      where id=line.product_id and business_id=o.business_id and reserved_quantity>=line.quantity;
+      if not found then raise exception 'Reservation is inconsistent for product %.',line.product_id; end if;
+    end loop;
+  end if;
+  perform public.log_activity('Deleted order','order',o.id,jsonb_build_object('order_number',o.order_number));
+  delete from public.orders where id=o.id;
+  return true;
+end;
+$$;
+revoke all on function public.delete_order(uuid) from public;
+grant execute on function public.delete_order(uuid) to authenticated;
