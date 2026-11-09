@@ -100,7 +100,7 @@ Use the exact email address belonging to the Auth user. Do not create a business
 
 ### 4. Configure environment variables
 
-Copy `.env.example` to `.env.local` and set your Supabase URL, public anon/publishable key, and independent random workspace keys.
+Copy `.env.example` to `.env.local` and set your Supabase URL, public publishable key, and independent random workspace keys.
 
 Generate a different value for each workspace key. For example:
 
@@ -113,7 +113,7 @@ Required values:
 | Variable | Purpose |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable/anon key |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable/anon key |
 | `ADMIN_WORKSPACE_KEY` | Random admin workspace path |
 | `MANAGER_WORKSPACE_KEY` | Random manager workspace path |
 | `CASHIER_WORKSPACE_KEY` | Random cashier workspace path |
