@@ -53,9 +53,13 @@ function parseOr(value: unknown): Document[] {
   }).filter((item) => Object.keys(item).length);
 }
 function roleOf(context: DbContext) { return String(context.profile?.role || ''); }
-function assertActive(context: DbContext) {
+function assertProfile(context: DbContext) {
   if (!context.user || !context.profile?.business_id || context.profile.active !== true) throw new Error('Your account is not active. Check your invitation.');
-  if (context.business?.is_suspended) throw new Error('This business is suspended.');
+}
+function assertActive(context: DbContext) {
+  assertProfile(context);
+  if (!context.business) throw new Error('Business not found.');
+  if (context.business.is_suspended) throw new Error('This business is suspended.');
   if (!staff.includes(roleOf(context))) throw new Error('Your account does not have an active staff role.');
 }
 function canRead(table: string, context: DbContext, _query: QueryRequest): boolean {
@@ -127,7 +131,8 @@ async function expandRelations(db: Db, table: string, document: Document, select
 export async function executeQuery(db: Db, context: DbContext, query: QueryRequest): Promise<QueryResult> {
   try {
     if (!['businesses','profiles','owner_accounts','categories','products','customers','orders','inventory_movements','expenses','payment_history','notifications','activity_logs'].includes(query.table)) return fail('Unknown data collection.');
-    if (query.table !== 'profiles' && query.table !== 'owner_accounts') assertActive(context);
+    if (query.table === 'businesses') assertProfile(context);
+    else if (query.table !== 'profiles' && query.table !== 'owner_accounts') assertActive(context);
     const collection = db.collection(query.table);
     if (query.action === 'select') {
       if (!canRead(query.table, context, query)) return fail('You do not have permission to view these records.');
@@ -159,35 +164,40 @@ export async function executeQuery(db: Db, context: DbContext, query: QueryReque
     if (query.action === 'insert') {
       const inputs = Array.isArray(query.payload) ? query.payload : [query.payload || {}];
       const now = new Date();
-      for (const input of inputs as Document[]) {
-        const document: Document = { ...input, _id: randomUUID(), business_id: context.profile!.business_id, created_at: now };
-        if (query.table === 'products') {
-          document.reserved_quantity = 0; document.active = true; document.updated_at = now;
-          document.stock_quantity = Number(document.stock_quantity || 0);
-          document.low_stock_level = Number(document.low_stock_level ?? 5);
-          document.cost_price = Number(document.cost_price || 0);
-          document.selling_price = Number(document.selling_price || 0);
-          if (!document.name || !Number.isFinite(document.stock_quantity) || !Number.isFinite(document.low_stock_level) || !Number.isFinite(document.cost_price) || !Number.isFinite(document.selling_price) || document.stock_quantity < 0 || document.low_stock_level < 0 || document.cost_price < 0 || document.selling_price < 0) throw new Error('Enter valid product details.');
-          if (document.category_id && !await db.collection('categories').findOne({ _id: document.category_id, business_id: document.business_id })) throw new Error('Product category must belong to the same business.');
-        }
-        if (query.table === 'categories' && !String(document.name || '').trim()) throw new Error('Category name is required.');
-        if (query.table === 'expenses') {
-          document.amount = Number(document.amount);
-          document.created_by = context.user!.id;
-          if (!document.title || !Number.isFinite(document.amount) || document.amount <= 0) throw new Error('Enter a title and an amount greater than zero.');
-        }
-        await collection.insertOne(document);
-        if (query.table === 'products') {
-          await db.collection('inventory_movements').insertOne({
-            _id: randomUUID(), business_id: document.business_id, product_id: document._id, movement_type: 'opening',
-            delta_on_hand: document.stock_quantity, delta_reserved: 0, note: 'Opening product quantity',
-            created_by: context.user!.id, created_at: now,
-          });
-          await db.collection('activity_logs').insertOne({ _id: randomUUID(), business_id: document.business_id, actor_id: context.user!.id, action: 'Created product', entity: 'product', entity_id: document._id, details: { name: document.name }, created_at: now });
-        }
-        if (query.table === 'categories') await db.collection('activity_logs').insertOne({ _id: randomUUID(), business_id: document.business_id, actor_id: context.user!.id, action: 'Created category', entity: 'category', entity_id: document._id, details: { name: document.name }, created_at: now });
-        if (query.table === 'expenses') await db.collection('activity_logs').insertOne({ _id: randomUUID(), business_id: document.business_id, actor_id: context.user!.id, action: 'Recorded expense', entity: 'expense', entity_id: document._id, details: { title: document.title, amount: document.amount }, created_at: now });
-      }
+      const session = db.client.startSession();
+      try {
+        await session.withTransaction(async () => {
+          for (const input of inputs as Document[]) {
+            const document: Document = { ...input, _id: randomUUID(), business_id: context.profile!.business_id, created_at: now };
+            if (query.table === 'products') {
+              document.reserved_quantity = 0; document.active = true; document.updated_at = now;
+              document.stock_quantity = Number(document.stock_quantity || 0);
+              document.low_stock_level = Number(document.low_stock_level ?? 5);
+              document.cost_price = Number(document.cost_price || 0);
+              document.selling_price = Number(document.selling_price || 0);
+              if (!document.name || !Number.isFinite(document.stock_quantity) || !Number.isFinite(document.low_stock_level) || !Number.isFinite(document.cost_price) || !Number.isFinite(document.selling_price) || document.stock_quantity < 0 || document.low_stock_level < 0 || document.cost_price < 0 || document.selling_price < 0) throw new Error('Enter valid product details.');
+              if (document.category_id && !await db.collection('categories').findOne({ _id: document.category_id, business_id: document.business_id }, { session })) throw new Error('Product category must belong to the same business.');
+            }
+            if (query.table === 'categories' && !String(document.name || '').trim()) throw new Error('Category name is required.');
+            if (query.table === 'expenses') {
+              document.amount = Number(document.amount);
+              document.created_by = context.user!.id;
+              if (!document.title || !Number.isFinite(document.amount) || document.amount <= 0) throw new Error('Enter a title and an amount greater than zero.');
+            }
+            await collection.insertOne(document, { session });
+            if (query.table === 'products') {
+              await db.collection('inventory_movements').insertOne({
+                _id: randomUUID(), business_id: document.business_id, product_id: document._id, movement_type: 'opening',
+                delta_on_hand: document.stock_quantity, delta_reserved: 0, note: 'Opening product quantity',
+                created_by: context.user!.id, created_at: now,
+              }, { session });
+              await db.collection('activity_logs').insertOne({ _id: randomUUID(), business_id: document.business_id, actor_id: context.user!.id, action: 'Created product', entity: 'product', entity_id: document._id, details: { name: document.name }, created_at: now }, { session });
+            }
+            if (query.table === 'categories') await db.collection('activity_logs').insertOne({ _id: randomUUID(), business_id: document.business_id, actor_id: context.user!.id, action: 'Created category', entity: 'category', entity_id: document._id, details: { name: document.name }, created_at: now }, { session });
+            if (query.table === 'expenses') await db.collection('activity_logs').insertOne({ _id: randomUUID(), business_id: document.business_id, actor_id: context.user!.id, action: 'Recorded expense', entity: 'expense', entity_id: document._id, details: { title: document.title, amount: document.amount }, created_at: now }, { session });
+          }
+        });
+      } finally { await session.endSession(); }
       return { data: null, error: null };
     }
     const filter: Document = { ...scopeFor(query.table, context) };
