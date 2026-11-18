@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/db/client';
 export function LoginForm({ inviteKey, message }: { inviteKey: string; message: string }) {
   const router = useRouter(); const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [busy,setBusy]=useState(false); const [error,setError]=useState(message);
   async function submit(e: React.FormEvent<HTMLFormElement>) {

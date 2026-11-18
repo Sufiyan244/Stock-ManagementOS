@@ -1,5 +1,5 @@
 'use client';
-import {useState} from 'react';import {createClient} from '@/lib/supabase/client';
+import {useState} from 'react';import {createClient} from '@/lib/db/client';
 export function OwnerConsole({businesses}:{businesses:any[]}){const [notice,setNotice]=useState('');const [selected,setSelected]=useState(businesses[0]?.id||'');const [message,setMessage]=useState('Your monthly StockOS rental payment is due. Please contact the provider after payment.');const [date,setDate]=useState(new Date().toISOString().slice(0,10));const [repeatMonthly,setRepeatMonthly]=useState(false);
  async function suspend(id:string,suspended:boolean){const {error}=await createClient().rpc('owner_set_business_suspension',{p_business_id:id,p_suspended:suspended});setNotice(error?error.message:'Business rental access updated.');if(!error)window.location.reload();}
  async function schedule(e:React.FormEvent){e.preventDefault();const {error}=await createClient().rpc('owner_schedule_message',{p_business_id:selected,p_message:message,p_scheduled_for:new Date(date+'T09:00:00').toISOString(),p_repeat_monthly:repeatMonthly});setNotice(error?error.message:'Reminder scheduled for the business administrator.');}
