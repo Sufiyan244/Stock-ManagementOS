@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/db/client';
 export function RegisterForm() {
   const [name,setName]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState(''); const [key,setKey]=useState(''); const [busy,setBusy]=useState(false); const [message,setMessage]=useState('');
   async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setBusy(true);setMessage('');const supabase=createClient();

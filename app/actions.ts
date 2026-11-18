@@ -1,7 +1,7 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/db/server';
 import { requireProfile } from '@/lib/auth';
 export async function signOutAction(){const supabase=await createClient();await supabase.auth.signOut();redirect('/login');}
 export async function addProductAction(formData:FormData){const {supabase,profile}=await requireProfile(['admin','manager']);const name=String(formData.get('name')||'').trim();const selling=Number(formData.get('selling_price'));const cost=Number(formData.get('cost_price')||0);const stock=Number(formData.get('stock_quantity')||0);const categoryId=String(formData.get('category_id')||'').trim()||null;if(!name||selling<0||cost<0||stock<0)throw new Error('Enter valid product details.');

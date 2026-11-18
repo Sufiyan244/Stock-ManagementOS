@@ -2,7 +2,7 @@
 import {useState} from 'react';
 import {useRouter} from 'next/navigation';
 import {addCategoryAction,addExpenseAction,addProductAction} from '@/app/actions';
-import {createClient} from '@/lib/supabase/client';
+import {createClient} from '@/lib/db/client';
 import {OrderComposer} from '@/components/order-composer';
 import {ExportTools} from '@/components/export-tools';
 

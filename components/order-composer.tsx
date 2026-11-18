@@ -1,5 +1,5 @@
 'use client';
-import {useMemo,useState} from 'react';import {useRouter} from 'next/navigation';import {createClient} from '@/lib/supabase/client';
+import {useMemo,useState} from 'react';import {useRouter} from 'next/navigation';import {createClient} from '@/lib/db/client';
 export function OrderComposer({products}:{products:any[]}){
  const router=useRouter();const [customer,setCustomer]=useState('');const [notes,setNotes]=useState('');const [cart,setCart]=useState<Record<string,number>>({});const [error,setError]=useState('');const [busy,setBusy]=useState(false);
  const total=useMemo(()=>products.reduce((s,p)=>s+(cart[p.id]||0)*Number(p.selling_price),0),[products,cart]);
