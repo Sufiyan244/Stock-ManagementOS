@@ -60,8 +60,10 @@ export async function executeRpc(db: Db, context: DbContext, name: string, args:
         if (role === 'admin' || !['manager','order_booker','cashier'].includes(role)) throw new Error('Invalid staff role.');
         if (email.length < 5 || email.indexOf('@') < 2) throw new Error('Enter a valid staff email.');
         const token = randomBytes(24).toString('hex');
-        await collection(db,'invitation_keys').insertOne({ _id: randomUUID(), business_id: bid, email, role, token_hash: createHash('sha256').update(token).digest('hex'), created_by: userId, expires_at: new Date(Date.now()+7*24*60*60*1000), used_at: null, created_at: now });
-        await log(db,context,'Generated staff invitation','invitation',null,{email,role});
+        await transaction(db, async (session) => {
+          await collection(db,'invitation_keys').insertOne({ _id: randomUUID(), business_id: bid, email, role, token_hash: createHash('sha256').update(token).digest('hex'), created_by: userId, expires_at: new Date(Date.now()+7*24*60*60*1000), used_at: null, created_at: now }, { session });
+          await log(db,context,'Generated staff invitation','invitation',null,{email,role},session);
+        });
         return { data: token, error: null };
       }
       case 'create_order': {
@@ -116,16 +118,20 @@ export async function executeRpc(db: Db, context: DbContext, name: string, args:
         const booker=await collection(db,'profiles').findOne({_id:bookerId,business_id:bid,role:'order_booker',active:true});
         if(!booker)throw new Error('Select an active order booker from this business.');
         if(!delivery)throw new Error('Delivery person name is required.');
-        const result=await collection(db,'orders').updateOne({_id:String(args.p_order_id),business_id:bid,status:'confirmed'},{$set:{status:'allocated',assigned_order_booker_id:bookerId,delivery_person_name:delivery,delivery_person_phone:String(args.p_delivery_person_phone||'').trim()||null,updated_at:now}});
-        if(!result.matchedCount)throw new Error('Only confirmed orders can be allocated.');
-        await log(db,context,'Allocated order','order',String(args.p_order_id),{delivery_person:delivery});
+        await transaction(db,async(session)=>{
+          const result=await collection(db,'orders').updateOne({_id:String(args.p_order_id),business_id:bid,status:'confirmed'},{$set:{status:'allocated',assigned_order_booker_id:bookerId,delivery_person_name:delivery,delivery_person_phone:String(args.p_delivery_person_phone||'').trim()||null,updated_at:now}},{session});
+          if(!result.matchedCount)throw new Error('Only confirmed orders can be allocated.');
+          await log(db,context,'Allocated order','order',String(args.p_order_id),{delivery_person:delivery},session);
+        });
         return {data:true,error:null};
       }
       case 'mark_order_on_the_way': {
         ensureStaff(context,managerRoles);
-        const result=await collection(db,'orders').updateOne({_id:String(args.p_order_id),business_id:bid,status:'allocated'},{$set:{status:'on_the_way',updated_at:now}});
-        if(!result.matchedCount)throw new Error('Allocate an order before marking it on the way.');
-        await log(db,context,'Order is on the way','order',String(args.p_order_id));
+        await transaction(db,async(session)=>{
+          const result=await collection(db,'orders').updateOne({_id:String(args.p_order_id),business_id:bid,status:'allocated'},{$set:{status:'on_the_way',updated_at:now}},{session});
+          if(!result.matchedCount)throw new Error('Allocate an order before marking it on the way.');
+          await log(db,context,'Order is on the way','order',String(args.p_order_id),{},session);
+        });
         return {data:true,error:null};
       }
       case 'deliver_order': {
@@ -168,9 +174,11 @@ export async function executeRpc(db: Db, context: DbContext, name: string, args:
         ensureStaff(context,managerRoles);
         const customer=String(args.p_customer_name||'').trim();
         if(!customer)throw new Error('Customer name is required.');
-        const result=await collection(db,'orders').updateOne({_id:String(args.p_order_id),business_id:bid,status:'pending'},{$set:{customer_name:customer,notes:String(args.p_notes||'').trim()||null,updated_at:now}});
-        if(!result.matchedCount)throw new Error('Only pending orders can be edited.');
-        await log(db,context,'Updated order details','order',String(args.p_order_id),{customer_name:customer});
+        await transaction(db,async(session)=>{
+          const result=await collection(db,'orders').updateOne({_id:String(args.p_order_id),business_id:bid,status:'pending'},{$set:{customer_name:customer,notes:String(args.p_notes||'').trim()||null,updated_at:now}},{session});
+          if(!result.matchedCount)throw new Error('Only pending orders can be edited.');
+          await log(db,context,'Updated order details','order',String(args.p_order_id),{customer_name:customer},session);
+        });
         return {data:true,error:null};
       }
       case 'update_order_payment': {
@@ -211,10 +219,13 @@ export async function executeRpc(db: Db, context: DbContext, name: string, args:
         const target=String(args.p_target||''), message=String(args.p_message||'').trim();
         if(!['everyone','manager','order_booker','cashier'].includes(target))throw new Error('Invalid notification audience.');
         if(!message)throw new Error('Notification message is required.');
-        const recipients=await collection(db,'profiles').find({business_id:bid,active:true,_id:{$ne:userId},...(target==='everyone'?{}:{role:target})}).toArray();
-        if(recipients.length)await collection(db,'notifications').insertMany(recipients.map((profile)=>({_id:randomUUID(),business_id:bid,recipient_id:profile._id,title:String(args.p_title||'').trim()||'Business update',message,read_at:null,created_at:now})));
-        await log(db,context,'Sent notification','notification',null,{audience:target,recipient_count:recipients.length});
-        return {data:recipients.length,error:null};
+        const inserted = await transaction(db,async(session)=>{
+          const recipients=await collection(db,'profiles').find({business_id:bid,active:true,_id:{$ne:userId},...(target==='everyone'?{}:{role:target})},{session}).toArray();
+          if(recipients.length)await collection(db,'notifications').insertMany(recipients.map((profile)=>({_id:randomUUID(),business_id:bid,recipient_id:profile._id,title:String(args.p_title||'').trim()||'Business update',message,read_at:null,created_at:now})),{session});
+          await log(db,context,'Sent notification','notification',null,{audience:target,recipient_count:recipients.length},session);
+          return recipients.length;
+        });
+        return {data:inserted,error:null};
       }
       case 'owner_list_businesses': {
         if(!context.user||!context.owner)throw new Error('Owner access required.');
