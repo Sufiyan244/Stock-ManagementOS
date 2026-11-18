@@ -82,6 +82,9 @@ test('MongoDB data layer integration', { skip: !uri }, async (suite) => {
     await suite.test('allocation, dispatch and delivery preserve stock rules', async () => {
       const allocated = await executeRpc(db, admin, 'allocate_order', { p_order_id: orderId, p_assigned_order_booker_id: bookerId, p_delivery_person_name: 'Driver', p_delivery_person_phone: null });
       assert.equal(allocated.error, null);
+      const visibleCustomers = await executeQuery(db, booker, { table: 'customers', action: 'select', selection: 'id,full_name', filters: [], sort: [] });
+      assert.equal((visibleCustomers.data as any[]).length, 1);
+      assert.equal((visibleCustomers.data as any[])[0].full_name, 'Customer');
       assert.equal((await executeRpc(db, admin, 'mark_order_on_the_way', { p_order_id: orderId })).error, null);
       assert.equal((await executeRpc(db, admin, 'deliver_order', { p_order_id: orderId })).error, null);
       const product = await db.collection('products').findOne({ _id: productId });

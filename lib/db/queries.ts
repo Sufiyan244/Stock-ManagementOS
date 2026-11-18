@@ -88,9 +88,7 @@ function scopeFor(table: string, context: DbContext): Document {
   if (table === 'notifications') return { business_id: businessId, recipient_id: context.user?.id };
   if (table === 'orders' && role === 'cashier') return { business_id: businessId, status: { $ne: 'pending' } };
   if (table === 'orders' && role === 'order_booker') return { business_id: businessId, $or: [{ created_by: context.user?.id }, { assigned_order_booker_id: context.user?.id }] };
-  if (table === 'customers' && role === 'order_booker') {
-    return { business_id: businessId, _id: { $in: [] } };
-  }
+  if (table === 'customers' && role === 'order_booker') return { business_id: businessId };
   return businessId ? { business_id: businessId } : {};
 }
 function canWrite(table: string, action: QueryRequest['action'], context: DbContext) {
