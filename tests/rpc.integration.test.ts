@@ -35,6 +35,18 @@ test('MongoDB data layer integration', { skip: !uri }, async (suite) => {
       assert.equal(read.error, null);
       assert.equal((read.data as any[]).length, 1);
 
+      const spoofedTenant = await executeQuery(db, admin, {
+        table: 'products', action: 'select', selection: '*',
+        filters: [{ op: 'eq', field: 'business_id', value: otherBusinessId }], sort: [],
+      });
+      assert.equal((spoofedTenant.data as any[]).length, 0);
+
+      const spoofedProfile = await executeQuery(db, booker, {
+        table: 'profiles', action: 'select', selection: 'user_id,email',
+        filters: [{ op: 'eq', field: 'id', value: adminId }], sort: [], single: true,
+      });
+      assert.equal(spoofedProfile.data, null);
+
       assert.equal((await executeQuery(db, admin, { table: 'categories', action: 'insert', selection: '*', filters: [], sort: [], payload: { name: 'Beverages' } })).error, null);
       const category = await db.collection('categories').findOne({ business_id: businessId, name: 'Beverages' });
       assert.ok(category);

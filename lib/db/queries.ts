@@ -137,20 +137,20 @@ export async function executeQuery(db: Db, context: DbContext, query: QueryReque
     if (query.action === 'select') {
       if (!canRead(query.table, context, query)) return fail('You do not have permission to view these records.');
       const scope = scopeFor(query.table, context);
-      const filter: Document = { ...scope };
+      const filter: Document = { $and: [scope] };
       for (const item of query.filters) {
-        if (item.op === 'eq' && item.field) filter[fieldName(item.field)] = item.value;
-        if (item.op === 'gte' && item.field) filter[fieldName(item.field)] = { $gte: item.value };
+        if (item.op === 'eq' && item.field) filter.$and.push({ [fieldName(item.field)]: item.value });
+        if (item.op === 'gte' && item.field) filter.$and.push({ [fieldName(item.field)]: { $gte: item.value } });
       }
       const orFilter = query.filters.find((item) => item.op === 'or');
       // Order-booker visibility is always constrained to their own/assigned orders.
       // Do not let a client-supplied .or() replace the mandatory tenant/owner predicate.
       if (orFilter && !(query.table === 'orders' && roleOf(context) === 'order_booker')) {
-        filter.$or = parseOr(orFilter.value);
+        filter.$and.push({ $or: parseOr(orFilter.value) });
       }
       if (query.table === 'customers' && roleOf(context) === 'order_booker') {
         const visibleOrders = await db.collection('orders').find({ business_id: context.profile!.business_id, $or: [{ created_by: context.user!.id }, { assigned_order_booker_id: context.user!.id }] }, { projection: { customer_id: 1 } }).toArray();
-        filter._id = { $in: visibleOrders.map((order) => order.customer_id).filter(Boolean) };
+        filter.$and.push({ _id: { $in: visibleOrders.map((order) => order.customer_id).filter(Boolean) } });
       }
       const cursor = collection.find(filter as Filter<Document>);
       if (query.sort.length) cursor.sort(Object.fromEntries(query.sort.map((item) => [fieldName(item.field), item.direction])));
@@ -200,8 +200,8 @@ export async function executeQuery(db: Db, context: DbContext, query: QueryReque
       } finally { await session.endSession(); }
       return { data: null, error: null };
     }
-    const filter: Document = { ...scopeFor(query.table, context) };
-    for (const item of query.filters) if (item.op === 'eq' && item.field) filter[fieldName(item.field)] = item.value;
+    const filter: Document = { $and: [scopeFor(query.table, context)] };
+    for (const item of query.filters) if (item.op === 'eq' && item.field) filter.$and.push({ [fieldName(item.field)]: item.value });
     if (query.action === 'update') {
       const patch = { ...((query.payload || {}) as Document), updated_at: new Date() };
       if (query.table === 'products' && ('stock_quantity' in patch || 'reserved_quantity' in patch)) throw new Error('Use the stock adjustment workflow to change inventory quantities.');
