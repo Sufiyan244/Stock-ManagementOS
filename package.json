@@ -1,1 +1,36 @@
-{"name":"stock-management-os","version":"1.0.0","private":true,"scripts":{"dev":"next dev","build":"next build","start":"next start","lint":"eslint ."},"dependencies":{"@supabase/ssr":"0.12.7","@supabase/supabase-js":"^2.114.0","next":"16.4.5","react":"19.3.1","react-dom":"19.3.1"},"devDependencies":{"@tailwindcss/postcss":"4.3.3","@types/node":"^22.15.0","@types/react":"^19.0.0","@types/react-dom":"^19.0.0","eslint":"^9.25.0","eslint-config-next":"16.4.5","tailwindcss":"4.3.3","typescript":"^5.8.3"}}
+{
+  "name": "stock-management-os",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "db:setup": "node --env-file=.env.local scripts/seed-mongodb.mjs",
+    "db:export-supabase": "node --env-file=.env.local scripts/export-supabase.mjs",
+    "db:import-supabase": "node --env-file=.env.local scripts/import-supabase.mjs"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.2.3",
+    "mongodb": "^6.22.0",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.25.0",
+    "eslint-config-next": "16.4.5",
+    "pg": "^8.23.1",
+    "tailwindcss": "4.3.3",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3"
+  }
+}
